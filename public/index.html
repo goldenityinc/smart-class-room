@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Classroom Chatroom</title>
+    <style>
+      :root {
+        --bg: radial-gradient(circle at top left, #f4efe5 0%, #e3ecf6 42%, #cedee4 100%);
+        --panel: rgba(255, 255, 255, 0.84);
+        --panel-strong: rgba(255, 255, 255, 0.96);
+        --border: rgba(21, 52, 72, 0.12);
+        --text: #1d2935;
+        --muted: #5c6c7d;
+        --accent: #0f766e;
+        --accent-dark: #115e59;
+        --accent-soft: rgba(15, 118, 110, 0.12);
+        --bubble-other: rgba(20, 60, 96, 0.08);
+        --bubble-self: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);
+        --danger: #b42318;
+        --shadow: 0 18px 50px rgba(20, 41, 55, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+        color: var(--text);
+        background: var(--bg);
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 28px));
+        margin: 24px auto 40px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.3fr 0.9fr;
+        gap: 18px;
+        margin-bottom: 20px;
+      }
+
+      .hero-card,
+      .meta-card,
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .hero-card {
+        padding: 28px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero-card::after {
+        content: '';
+        position: absolute;
+        inset: auto -40px -60px auto;
+        width: 240px;
+        height: 240px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(20, 184, 166, 0.22), rgba(20, 184, 166, 0));
+        pointer-events: none;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+        padding: 7px 14px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent-dark);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        max-width: 680px;
+        font-size: clamp(2.3rem, 5vw, 4.3rem);
+        line-height: 0.96;
+        letter-spacing: -0.04em;
+      }
+
+      .hero p,
+      .meta-copy,
+      .panel p,
+      .status,
+      .chat-meta,
+      .composer-label {
+        color: var(--muted);
+      }
+
+      .hero p {
+        margin: 0;
+        max-width: 760px;
+        font-size: 1.04rem;
+        line-height: 1.6;
+      }
+
+      .meta-card {
+        padding: 24px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(231, 242, 247, 0.88));
+      }
+
+      .meta-card h2,
+      .panel h2 {
+        margin: 0 0 10px;
+        font-size: 1.25rem;
+      }
+
+      .meta-grid {
+        display: grid;
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .meta-pill {
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(21, 52, 72, 0.08);
+      }
+
+      .meta-label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent-dark);
+      }
+
+      .meta-value {
+        font-size: 1.05rem;
+        font-weight: 700;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 340px minmax(0, 1fr);
+        gap: 20px;
+      }
+
+      .panel {
+        padding: 24px;
+      }
+
+      .controls {
+        display: grid;
+        gap: 16px;
+      }
+
+      .control-group {
+        display: grid;
+        gap: 8px;
+      }
+
+      label {
+        font-size: 0.88rem;
+        font-weight: 700;
+      }
+
+      select,
+      input {
+        width: 100%;
+        border: 1px solid rgba(21, 52, 72, 0.12);
+        border-radius: 16px;
+        padding: 13px 14px;
+        font-size: 1rem;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.92);
+      }
+
+      button {
+        border: 0;
+        border-radius: 16px;
+        padding: 15px 20px;
+        font-size: 1rem;
+        font-weight: 700;
+        color: white;
+        background: linear-gradient(135deg, var(--accent) 0%, #14b8a6 100%);
+        cursor: pointer;
+        transition: transform 0.2s ease, opacity 0.2s ease;
+      }
+
+      button:hover:enabled {
+        transform: translateY(-1px);
+      }
+
+      button.recording {
+        background: linear-gradient(135deg, #b42318 0%, #f04438 100%);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.75;
+      }
+
+      .status {
+        font-size: 0.95rem;
+        line-height: 1.6;
+      }
+
+      .chat-shell {
+        display: grid;
+        gap: 16px;
+      }
+
+      .subtitle-box {
+        min-height: 420px;
+        max-height: 420px;
+        overflow-y: auto;
+        padding: 18px;
+        border-radius: 22px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(226, 237, 243, 0.72));
+        border: 1px solid rgba(21, 52, 72, 0.1);
+      }
+
+      #chatHistory {
+        display: grid;
+        gap: 12px;
+      }
+
+      .empty-state {
+        padding: 18px;
+        border-radius: 18px;
+        border: 1px dashed rgba(21, 52, 72, 0.16);
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.45);
+      }
+
+      .message {
+        display: flex;
+      }
+
+      .message.self {
+        justify-content: flex-end;
+      }
+
+      .bubble {
+        max-width: min(84%, 720px);
+        padding: 14px 16px;
+        border-radius: 20px;
+        background: var(--bubble-other);
+        box-shadow: 0 10px 24px rgba(21, 52, 72, 0.08);
+      }
+
+      .message.self .bubble {
+        background: var(--bubble-self);
+        color: white;
+      }
+
+      .chat-meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .message.self .chat-meta,
+      .message.self .composer-label {
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      .chat-text {
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.65;
+      }
+
+      .composer {
+        display: grid;
+        gap: 10px;
+        padding: 16px 18px;
+        border-radius: 20px;
+        background: var(--panel-strong);
+        border: 1px solid rgba(21, 52, 72, 0.08);
+      }
+
+      .composer-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .hint {
+        font-size: 0.92rem;
+        color: var(--muted);
+      }
+
+      .warning {
+        color: var(--danger);
+      }
+
+      @media (max-width: 640px) {
+        .shell {
+          width: min(100% - 20px, 1080px);
+          margin: 20px auto;
+        }
+
+        .hero,
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-card,
+        .meta-card,
+        .panel {
+          border-radius: 24px;
+          padding: 20px;
+        }
+
+        .subtitle-box {
+          min-height: 360px;
+          max-height: 360px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <article class="hero-card">
+          <span class="eyebrow">Two-Way Multi-Language Chatroom</span>
+          <h1>Speak in your language. Everyone hears it in theirs.</h1>
+          <p>
+            Each browser is a participant. Choose your language, start recording, and the server will transcribe,
+            translate, synthesize speech, and send a localized chat message to every connected client.
+          </p>
+        </article>
+
+        <aside class="meta-card">
+          <h2>Session Snapshot</h2>
+          <p class="meta-copy">Open multiple browser windows to simulate a classroom with different preferred languages.</p>
+          <div class="meta-grid">
+            <div class="meta-pill">
+              <span class="meta-label">Connection</span>
+              <span class="meta-value" id="connectionId">Connecting...</span>
+            </div>
+            <div class="meta-pill">
+              <span class="meta-label">Current Preference</span>
+              <span class="meta-value" id="languageBadge">English</span>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>Your Controls</h2>
+          <p>Set your preferred language, then send microphone chunks into the shared chatroom.</p>
+
+          <div class="controls">
+            <div class="control-group">
+              <label for="languageSelect">My Language</label>
+              <select id="languageSelect">
+                <option value="english">English</option>
+                <option value="indonesian">Indonesian</option>
+                <option value="japanese">Japanese</option>
+                <option value="spanish">Spanish</option>
+              </select>
+            </div>
+
+            <div class="control-group">
+              <label for="displayName">Display Name</label>
+              <input id="displayName" type="text" value="Participant" maxlength="32" />
+            </div>
+
+            <button id="recordBtn">Start Recording</button>
+            <p class="status" id="recordingStatus">Idle. Waiting for microphone access.</p>
+            <p class="hint">The browser sends one 4-second chunk at a time using <strong>chatAudio</strong>.</p>
+            <p class="hint warning" id="audioWarning"></p>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="chat-shell">
+            <div>
+              <h2>Chat History</h2>
+              <p>Incoming messages are appended as chat bubbles and auto-scroll to the latest item.</p>
+            </div>
+
+            <div class="subtitle-box" id="historyViewport">
+              <div id="chatHistory">
+                <div class="empty-state" id="emptyState">No messages yet. Start speaking from any connected client.</div>
+              </div>
+            </div>
+
+            <div class="composer">
+              <div class="composer-row">
+                <span class="composer-label">Pipeline</span>
+                <span class="composer-label">Transcription → Translation → TTS → Chat Receive</span>
+              </div>
+              <p class="hint">Each recipient gets a version translated to their own selected language.</p>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+      const recordBtn = document.getElementById('recordBtn');
+      const recordingStatus = document.getElementById('recordingStatus');
+      const languageSelect = document.getElementById('languageSelect');
+      const displayNameInput = document.getElementById('displayName');
+      const chatHistory = document.getElementById('chatHistory');
+      const emptyState = document.getElementById('emptyState');
+      const historyViewport = document.getElementById('historyViewport');
+      const connectionId = document.getElementById('connectionId');
+      const languageBadge = document.getElementById('languageBadge');
+      const audioWarning = document.getElementById('audioWarning');
+
+      let mediaStream = null;
+      let mediaStreamSource = null;
+      let audioContext = null;
+      let analyser = null;
+      let activeRecorder = null;
+      let activeChunkTimeout = null;
+      let activeLevelInterval = null;
+      let isRecording = false;
+      let mySocketId = null;
+      let audioQueue = [];
+      let isPlayingAudio = false;
+
+      const SILENCE_THRESHOLD = 0.018;
+
+      function updateLanguagePreference(languageKey) {
+        const label = languageSelect.options[languageSelect.selectedIndex].text;
+        languageBadge.textContent = label;
+        socket.emit('setLanguage', languageKey);
+      }
+
+      function appendMessage(payload) {
+        if (emptyState) {
+          emptyState.remove();
+        }
+
+        const wrapper = document.createElement('div');
+        const bubble = document.createElement('div');
+        const meta = document.createElement('div');
+        const translatedParagraph = document.createElement('p');
+        const originalParagraph = document.createElement('p');
+
+        const isOwnMessage = payload.senderId === mySocketId;
+        const senderLabel = isOwnMessage ? `${displayNameInput.value.trim() || 'You'} (You)` : `Participant ${payload.senderId.slice(0, 6)}`;
+
+        wrapper.className = `message${isOwnMessage ? ' self' : ''}`;
+        bubble.className = 'bubble';
+        meta.className = 'chat-meta';
+        translatedParagraph.className = 'chat-text';
+        originalParagraph.className = 'chat-text composer-label';
+
+        meta.innerHTML = `<span>${senderLabel}</span><span>${payload.sourceLanguage} → ${payload.targetLanguage}</span>`;
+        translatedParagraph.textContent = payload.translatedText;
+
+        if (payload.originalText && payload.originalText !== payload.translatedText) {
+          originalParagraph.textContent = `Original: ${payload.originalText}`;
+        }
+
+        bubble.appendChild(meta);
+        bubble.appendChild(translatedParagraph);
+
+        if (originalParagraph.textContent) {
+          bubble.appendChild(originalParagraph);
+        }
+
+        wrapper.appendChild(bubble);
+        chatHistory.appendChild(wrapper);
+        historyViewport.scrollTop = historyViewport.scrollHeight;
+      }
+
+      function normalizeAudioData(audioData) {
+        if (audioData instanceof ArrayBuffer) {
+          return audioData;
+        }
+
+        if (ArrayBuffer.isView(audioData)) {
+          return audioData.buffer;
+        }
+
+        if (audioData?.type === 'Buffer' && Array.isArray(audioData.data)) {
+          return new Uint8Array(audioData.data).buffer;
+        }
+
+        return null;
+      }
+
+      async function playNextAudio() {
+        if (isPlayingAudio || audioQueue.length === 0) {
+          return;
+        }
+
+        isPlayingAudio = true;
+        const nextAudio = audioQueue.shift();
+        let audioUrl;
+
+        try {
+          const audioBuffer = normalizeAudioData(nextAudio);
+
+          if (!audioBuffer) {
+            return;
+          }
+
+          const blob = new Blob([audioBuffer], { type: 'audio/mp3' });
+          audioUrl = URL.createObjectURL(blob);
+
+          const audio = new Audio(audioUrl);
+          await audio.play();
+          await new Promise((resolve) => {
+            audio.addEventListener(
+              'ended',
+              () => {
+                URL.revokeObjectURL(audioUrl);
+                resolve();
+              },
+              { once: true }
+            );
+          });
+        } catch (error) {
+          audioWarning.textContent = 'Autoplay diblokir browser. Klik halaman sekali lalu coba lagi.';
+
+          if (audioUrl) {
+            URL.revokeObjectURL(audioUrl);
+          }
+        } finally {
+          isPlayingAudio = false;
+
+          if (audioQueue.length > 0) {
+            playNextAudio();
+          }
+        }
+      }
+
+      function getRecorderOptions() {
+        if (typeof MediaRecorder === 'undefined') {
+          return undefined;
+        }
+
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          return { mimeType: 'audio/webm;codecs=opus' };
+        }
+
+        if (MediaRecorder.isTypeSupported('audio/webm')) {
+          return { mimeType: 'audio/webm' };
+        }
+
+        return undefined;
+      }
+
+      async function ensureStream() {
+        if (mediaStream) {
+          return;
+        }
+
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new AudioContext();
+        mediaStreamSource = audioContext.createMediaStreamSource(mediaStream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        mediaStreamSource.connect(analyser);
+      }
+
+      function readCurrentAudioLevel() {
+        if (!analyser) {
+          return 0;
+        }
+
+        const samples = new Float32Array(analyser.fftSize);
+        analyser.getFloatTimeDomainData(samples);
+
+        let sumSquares = 0;
+
+        for (const sample of samples) {
+          sumSquares += sample * sample;
+        }
+
+        return Math.sqrt(sumSquares / samples.length);
+      }
+
+      function recordSingleChunk() {
+        if (!isRecording || !mediaStream) {
+          return;
+        }
+
+        const audioChunks = [];
+        let peakAudioLevel = 0;
+        activeRecorder = new MediaRecorder(mediaStream, getRecorderOptions());
+
+        if (activeLevelInterval) {
+          window.clearInterval(activeLevelInterval);
+        }
+
+        activeLevelInterval = window.setInterval(() => {
+          peakAudioLevel = Math.max(peakAudioLevel, readCurrentAudioLevel());
+        }, 120);
+
+        activeRecorder.addEventListener('dataavailable', (event) => {
+          if (!event.data || event.data.size === 0) {
+            return;
+          }
+
+          audioChunks.push(event.data);
+        });
+
+        activeRecorder.addEventListener('stop', async () => {
+          activeRecorder = null;
+
+          if (activeLevelInterval) {
+            window.clearInterval(activeLevelInterval);
+            activeLevelInterval = null;
+          }
+
+          if (audioChunks.length > 0 && peakAudioLevel >= SILENCE_THRESHOLD) {
+            const audioBlob = new Blob(audioChunks, { type: audioChunks[0].type || 'audio/webm' });
+            const audioBuffer = await audioBlob.arrayBuffer();
+
+            socket.emit('chatAudio', {
+              audioBuffer,
+              sourceLanguage: languageSelect.value,
+              targetLanguage: 'auto',
+            });
+          } else {
+            console.log('Silent chunk skipped:', peakAudioLevel.toFixed(4));
+          }
+
+          if (isRecording) {
+            recordSingleChunk();
+          }
+        });
+
+        activeRecorder.start();
+        activeChunkTimeout = window.setTimeout(() => {
+          if (activeRecorder && activeRecorder.state !== 'inactive') {
+            activeRecorder.stop();
+          }
+        }, 4000);
+      }
+
+      async function toggleRecording() {
+        if (!isRecording) {
+          try {
+            await ensureStream();
+
+            isRecording = true;
+            audioWarning.textContent = '';
+            recordSingleChunk();
+            recordBtn.textContent = 'Stop Recording';
+            recordBtn.classList.add('recording');
+            recordingStatus.textContent = 'Recording live. Sending 4-second chunks to the server.';
+          } catch (error) {
+            console.error('Microphone access failed:', error);
+            recordingStatus.textContent = 'Could not access the microphone. Check browser permissions and try again.';
+          }
+
+          return;
+        }
+
+        isRecording = false;
+        recordBtn.textContent = 'Start Recording';
+        recordBtn.classList.remove('recording');
+        recordingStatus.textContent = 'Recording stopped. You can start again any time.';
+
+        if (activeChunkTimeout) {
+          window.clearTimeout(activeChunkTimeout);
+          activeChunkTimeout = null;
+        }
+
+        if (activeLevelInterval) {
+          window.clearInterval(activeLevelInterval);
+          activeLevelInterval = null;
+        }
+
+        if (activeRecorder && activeRecorder.state !== 'inactive') {
+          activeRecorder.stop();
+        }
+      }
+
+      recordBtn.addEventListener('click', toggleRecording);
+
+      languageSelect.addEventListener('change', () => {
+        updateLanguagePreference(languageSelect.value);
+      });
+
+      socket.on('connect', () => {
+        connectionId.textContent = socket.id.slice(0, 8);
+        mySocketId = socket.id;
+        updateLanguagePreference(languageSelect.value);
+      });
+
+      socket.on('sessionReady', (payload) => {
+        mySocketId = payload.socketId;
+        connectionId.textContent = payload.socketId.slice(0, 8);
+        languageBadge.textContent = payload.language.label;
+      });
+
+      socket.on('languageUpdated', (payload) => {
+        languageBadge.textContent = payload.label;
+      });
+
+      socket.on('chatReceive', async (payload) => {
+        appendMessage(payload);
+
+        if (!payload.audioData) {
+          return;
+        }
+
+        audioQueue.push(payload.audioData);
+        playNextAudio();
+      });
+    </script>
+  </body>
+</html>
