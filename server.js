@@ -3,6 +3,8 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
+const ffmpeg = require('fluent-ffmpeg');
 const { Server } = require('socket.io');
 const { OpenAI } = require('openai');
 
@@ -10,6 +12,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const PORT = 3000;
+const TEMP_DIR = path.join(__dirname, 'tmp');
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const GENERATED_AUDIO_DIR = path.join(PUBLIC_DIR, 'generated-audio');
 
 const SUPPORTED_LANGUAGES = {
   english: { label: 'English', code: 'en' },
@@ -36,7 +41,38 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+for (const directoryPath of [TEMP_DIR, GENERATED_AUDIO_DIR]) {
+  if (!fs.existsSync(directoryPath)) {
+    fs.mkdirSync(directoryPath, { recursive: true });
+  }
+}
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, callback) => {
+      callback(null, TEMP_DIR);
+    },
+    filename: (_req, file, callback) => {
+      const safeExtension = path.extname(file.originalname).toLowerCase() || '.mp4';
+      callback(null, `video_${Date.now()}_${Math.round(Math.random() * 1e9)}${safeExtension}`);
+    },
+  }),
+  fileFilter: (_req, file, callback) => {
+    const isMp4 = file.mimetype === 'video/mp4' || path.extname(file.originalname).toLowerCase() === '.mp4';
+
+    if (!isMp4) {
+      callback(new Error('Only .mp4 video uploads are supported.'));
+      return;
+    }
+
+    callback(null, true);
+  },
+  limits: {
+    fileSize: 200 * 1024 * 1024,
+  },
+});
+
+app.use(express.static(PUBLIC_DIR));
 
 function normalizeLanguage(languageKey) {
   if (!languageKey) {
@@ -72,6 +108,24 @@ async function transcribeAudio(tempFilePath, sourceLanguage) {
   return transcription.text?.trim() ?? '';
 }
 
+async function transcribeUploadedAudio(audioFilePath) {
+  const transcription = await openai.audio.transcriptions.create({
+    file: fs.createReadStream(audioFilePath),
+    model: 'whisper-1',
+  });
+
+  return transcription.text?.trim() ?? '';
+}
+
+async function translateUploadedAudioToEnglish(audioFilePath) {
+  const translation = await openai.audio.translations.create({
+    file: fs.createReadStream(audioFilePath),
+    model: 'whisper-1',
+  });
+
+  return translation.text?.trim() ?? '';
+}
+
 async function translateText(rawText, sourceLanguage, targetLanguage) {
   if (sourceLanguage.code === targetLanguage.code) {
     return rawText;
@@ -103,6 +157,84 @@ async function synthesizeSpeech(text) {
 
   return Buffer.from(await mp3.arrayBuffer());
 }
+
+function extractAudioFromVideo(videoFilePath, audioFilePath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg(videoFilePath)
+      .noVideo()
+      .audioCodec('libmp3lame')
+      .format('mp3')
+      .on('end', resolve)
+      .on('error', reject)
+      .save(audioFilePath);
+  });
+}
+
+function sanitizeFileNamePart(value) {
+  return String(value || 'audio')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'audio';
+}
+
+async function removeFileIfExists(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return;
+  }
+
+  await fs.promises.unlink(filePath);
+}
+
+app.post('/upload-video', upload.single('video'), async (req, res) => {
+  const uploadedVideoPath = req.file?.path;
+  const targetLanguage = normalizeLanguage(req.body?.targetLanguage);
+  const extractedAudioPath = path.join(TEMP_DIR, `audio_${Date.now()}_${Math.round(Math.random() * 1e9)}.mp3`);
+  const outputFileName = `translated_${sanitizeFileNamePart(targetLanguage.label)}_${Date.now()}.mp3`;
+  const outputAudioPath = path.join(GENERATED_AUDIO_DIR, outputFileName);
+
+  if (!uploadedVideoPath) {
+    res.status(400).json({ error: 'No video file was uploaded.' });
+    return;
+  }
+
+  try {
+    await extractAudioFromVideo(uploadedVideoPath, extractedAudioPath);
+
+    let translatedText = '';
+
+    if (targetLanguage.code === 'en') {
+      translatedText = await translateUploadedAudioToEnglish(extractedAudioPath);
+    } else {
+      const sourceTranscript = await transcribeUploadedAudio(extractedAudioPath);
+      translatedText = await translateText(sourceTranscript, { label: 'Detected source language', code: 'auto' }, targetLanguage);
+    }
+
+    if (!translatedText) {
+      throw new Error('No transcript was produced from the uploaded video.');
+    }
+
+    const speechBuffer = await synthesizeSpeech(translatedText);
+    await fs.promises.writeFile(outputAudioPath, speechBuffer);
+
+    res.json({
+      audioUrl: `/generated-audio/${outputFileName}`,
+      translatedText,
+      targetLanguage: targetLanguage.label,
+    });
+  } catch (error) {
+    const message = /ffmpeg/i.test(error.message || '')
+      ? 'FFmpeg is not installed or not available on PATH. Install FFmpeg before using video translation.'
+      : error.message || 'Video processing failed.';
+
+    console.error('Video translation failed:', message);
+    res.status(500).json({ error: message });
+  } finally {
+    await Promise.all([
+      removeFileIfExists(uploadedVideoPath),
+      removeFileIfExists(extractedAudioPath),
+    ]);
+  }
+});
 
 io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);

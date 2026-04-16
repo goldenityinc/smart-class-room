@@ -313,6 +313,95 @@
         color: var(--danger);
       }
 
+      .video-demo {
+        margin-top: 20px;
+      }
+
+      .video-demo-grid {
+        display: grid;
+        grid-template-columns: 360px minmax(0, 1fr);
+        gap: 20px;
+      }
+
+      .video-stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .processing-card {
+        display: grid;
+        gap: 10px;
+        padding: 16px 18px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(21, 52, 72, 0.08);
+      }
+
+      .progress-track {
+        position: relative;
+        width: 100%;
+        height: 10px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(21, 52, 72, 0.08);
+      }
+
+      .progress-bar {
+        position: absolute;
+        inset: 0;
+        width: 42%;
+        border-radius: inherit;
+        background: linear-gradient(135deg, var(--accent) 0%, #14b8a6 100%);
+        transform: translateX(-110%);
+        opacity: 0;
+      }
+
+      .progress-bar.active {
+        opacity: 1;
+        animation: processing-slide 1.15s ease-in-out infinite;
+      }
+
+      .progress-note {
+        min-height: 1.4em;
+        font-size: 0.94rem;
+        color: var(--muted);
+      }
+
+      .video-stage {
+        display: grid;
+        gap: 12px;
+      }
+
+      .video-stage video {
+        width: 100%;
+        border-radius: 24px;
+        border: 1px solid rgba(21, 52, 72, 0.1);
+        background: #0f1720;
+        box-shadow: 0 16px 30px rgba(15, 23, 32, 0.18);
+      }
+
+      .translation-output {
+        padding: 16px 18px;
+        border-radius: 20px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(226, 237, 243, 0.72));
+        border: 1px solid rgba(21, 52, 72, 0.1);
+      }
+
+      .translation-output strong {
+        display: block;
+        margin-bottom: 8px;
+      }
+
+      @keyframes processing-slide {
+        0% {
+          transform: translateX(-110%);
+        }
+
+        100% {
+          transform: translateX(260%);
+        }
+      }
+
       @media (max-width: 640px) {
         .shell {
           width: min(100% - 20px, 1080px);
@@ -321,6 +410,10 @@
 
         .hero,
         .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .video-demo-grid {
           grid-template-columns: 1fr;
         }
 
@@ -417,6 +510,52 @@
           </div>
         </article>
       </section>
+
+      <section class="panel video-demo">
+        <div class="video-demo-grid">
+          <article class="video-stack">
+            <div>
+              <h2>Video Translation Demo</h2>
+              <p>Upload an MP4, choose the output language, and the server will extract audio, translate it, and generate a translated speech track.</p>
+            </div>
+
+            <div class="control-group">
+              <label for="videoUpload">Video File</label>
+              <input type="file" id="videoUpload" accept="video/mp4" />
+            </div>
+
+            <div class="control-group">
+              <label for="targetLanguage">Target Language</label>
+              <select id="targetLanguage">
+                <option value="english">English</option>
+                <option value="indonesian">Indonesian</option>
+                <option value="japanese">Japanese</option>
+              </select>
+            </div>
+
+            <button id="processVideoBtn">Process Video</button>
+
+            <div class="processing-card" aria-live="polite">
+              <div class="composer-row">
+                <span class="composer-label">Video Pipeline</span>
+                <span class="composer-label" id="videoProcessingState">Idle</span>
+              </div>
+              <div class="progress-track" aria-hidden="true">
+                <div class="progress-bar" id="videoProgressBar"></div>
+              </div>
+              <p class="progress-note" id="videoProcessingNote">Choose an MP4 to begin.</p>
+            </div>
+          </article>
+
+          <article class="video-stage">
+            <video id="translatedVideo" controls playsinline></video>
+            <div class="translation-output">
+              <strong>Latest Translation</strong>
+              <p class="status" id="translationResult">No processed video yet.</p>
+            </div>
+          </article>
+        </div>
+      </section>
     </main>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -432,6 +571,14 @@
       const connectionId = document.getElementById('connectionId');
       const languageBadge = document.getElementById('languageBadge');
       const audioWarning = document.getElementById('audioWarning');
+      const videoUpload = document.getElementById('videoUpload');
+      const targetLanguageSelect = document.getElementById('targetLanguage');
+      const processVideoBtn = document.getElementById('processVideoBtn');
+      const translatedVideo = document.getElementById('translatedVideo');
+      const videoProgressBar = document.getElementById('videoProgressBar');
+      const videoProcessingState = document.getElementById('videoProcessingState');
+      const videoProcessingNote = document.getElementById('videoProcessingNote');
+      const translationResult = document.getElementById('translationResult');
 
       let mediaStream = null;
       let mediaStreamSource = null;
@@ -444,6 +591,8 @@
       let mySocketId = null;
       let audioQueue = [];
       let isPlayingAudio = false;
+      let translatedAudio = null;
+      let activeVideoObjectUrl = null;
 
       const SILENCE_THRESHOLD = 0.018;
 
@@ -600,6 +749,138 @@
         return Math.sqrt(sumSquares / samples.length);
       }
 
+      function setVideoProcessingState(isProcessing, stateText, noteText) {
+        processVideoBtn.disabled = isProcessing;
+        videoProcessingState.textContent = stateText;
+        videoProcessingNote.textContent = noteText;
+        videoProgressBar.classList.toggle('active', isProcessing);
+      }
+
+      function destroyTranslatedAudio() {
+        if (!translatedAudio) {
+          return;
+        }
+
+        translatedAudio.pause();
+        translatedAudio.src = '';
+        translatedAudio = null;
+      }
+
+      function syncTranslatedAudioTime() {
+        if (!translatedAudio) {
+          return;
+        }
+
+        const drift = Math.abs((translatedAudio.currentTime || 0) - translatedVideo.currentTime);
+
+        if (drift > 0.35) {
+          translatedAudio.currentTime = translatedVideo.currentTime;
+        }
+      }
+
+      function bindVideoTranslationSync(audioUrl) {
+        destroyTranslatedAudio();
+
+        translatedAudio = new Audio(audioUrl);
+        translatedAudio.preload = 'auto';
+        translatedAudio.currentTime = translatedVideo.currentTime;
+        translatedVideo.muted = true;
+
+        translatedVideo.onplay = async () => {
+          if (!translatedAudio) {
+            return;
+          }
+
+          syncTranslatedAudioTime();
+          translatedAudio.playbackRate = translatedVideo.playbackRate;
+
+          try {
+            await translatedAudio.play();
+          } catch (error) {
+            videoProcessingState.textContent = 'Playback blocked';
+            videoProcessingNote.textContent = 'Browser autoplay policy blocked translated audio. Press play again.';
+          }
+        };
+
+        translatedVideo.onpause = () => {
+          translatedAudio?.pause();
+        };
+
+        translatedVideo.onseeking = () => {
+          if (translatedAudio) {
+            translatedAudio.currentTime = translatedVideo.currentTime;
+          }
+        };
+
+        translatedVideo.onratechange = () => {
+          if (translatedAudio) {
+            translatedAudio.playbackRate = translatedVideo.playbackRate;
+          }
+        };
+
+        translatedVideo.ontimeupdate = () => {
+          syncTranslatedAudioTime();
+        };
+
+        translatedVideo.onended = () => {
+          if (!translatedAudio) {
+            return;
+          }
+
+          translatedAudio.pause();
+          translatedAudio.currentTime = 0;
+        };
+      }
+
+      async function processVideo() {
+        const selectedFile = videoUpload.files?.[0];
+
+        if (!selectedFile) {
+          setVideoProcessingState(false, 'Missing file', 'Choose an MP4 file first.');
+          return;
+        }
+
+        destroyTranslatedAudio();
+
+        if (activeVideoObjectUrl) {
+          URL.revokeObjectURL(activeVideoObjectUrl);
+          activeVideoObjectUrl = null;
+        }
+
+        const formData = new FormData();
+        formData.append('video', selectedFile);
+        formData.append('targetLanguage', targetLanguageSelect.value);
+
+        setVideoProcessingState(true, 'Processing...', 'Uploading video, extracting audio, translating, and generating speech.');
+        translationResult.textContent = 'Processing in progress...';
+
+        try {
+          const response = await fetch('/upload-video', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const payload = await response.json();
+
+          if (!response.ok) {
+            throw new Error(payload.error || 'Video processing failed.');
+          }
+
+          activeVideoObjectUrl = URL.createObjectURL(selectedFile);
+          translatedVideo.src = activeVideoObjectUrl;
+          translatedVideo.load();
+
+          bindVideoTranslationSync(payload.audioUrl);
+
+          translationResult.textContent = payload.translatedText;
+          setVideoProcessingState(false, 'Ready', `Translated audio generated in ${payload.targetLanguage}. Press play on the video to hear the new track.`);
+        } catch (error) {
+          console.error('Video processing failed:', error);
+          translationResult.textContent = 'No processed video yet.';
+          setVideoProcessingState(false, 'Failed', error.message || 'Video processing failed.');
+        }
+      }
+
       function recordSingleChunk() {
         if (!isRecording || !mediaStream) {
           return;
@@ -699,6 +980,7 @@
       }
 
       recordBtn.addEventListener('click', toggleRecording);
+      processVideoBtn.addEventListener('click', processVideo);
 
       languageSelect.addEventListener('change', () => {
         updateLanguagePreference(languageSelect.value);
